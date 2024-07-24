@@ -9,7 +9,7 @@ from requests.exceptions import Timeout
 from tkinter import *
 from openpyxl import *
 
-os.chdir('/home/pi/tmu-v1-hermatic/')
+os.chdir('/home/pi/tmu-v1-drytype/')
 
 #init value
 engineName = "Trafo X"
@@ -115,7 +115,6 @@ trialNum = 0
 gasFault = False
 counterPF = 0
 DIstat = [0]*9
-sampleNum = 0 #GPS
 
 def plcHandler(getPLC):
     plcData = [0]*5
@@ -125,20 +124,20 @@ def plcHandler(getPLC):
     except:
         plcData[4] = 404
         pass
-    if plcData[0] < 194:
-        plcData[0] = 0
-    else:
-        plcData[0] = (round(((plcData[0] - 192.324)/769.296)*100))/100 #Pressure Calibration
     return plcData
 
-def dataHandler(getTemp, getOil, getElect1, getElect2, getElect3, getHarmV, getHarmA, currentResult, CTratio, PTratio):
+def dataHandler(getBusTemp, getWindTemp, getElect1, getElect2, getElect3, getHarmV, getHarmA, currentResult, CTratio, PTratio):
     try:
-        currentResult[0] = (round(((0.195 * getOil.registers[0]) - 37.5)*100))/100 #oiltemp
-        currentResult[1:4] = [member/10 for member in getTemp.registers] #bustemp
+        currentResult[0] = 0 #oiltemp
+        currentResult[1:4] = [member/10 for member in getBusTemp.registers] #bustemp
         for i in range(1, 4):
             if currentResult[i]>240:
-                currentResult[i] = 0
-        print(currentResult[0:4])
+                currentResult[i] = 5
+
+        currentResult[50:] = [member/10 for member in getWindTemp.registers] #windtemp
+        for i in range(50, 53):
+            if currentResult[i]>240:
+                currentResult[i] = 5
     except:
         pass
     try:
@@ -209,7 +208,7 @@ def Restart():
     global wb
     wb.save(pathDatLog)
     logging.info("Restart")
-    os.execv(sys.executable, [sys.executable] + ['/home/pi/tmu-v1-hermatic/IoT_Trafo_Project.py'])
+    os.execv(sys.executable, [sys.executable] + ['/home/pi/tmu-v1-drytype/IoT_Trafo_Project.py'])
 
 def Start():
     global progStat
@@ -313,9 +312,9 @@ def mainLoop(thread_name, interval):
             else:
                 activeParam[0] = None     
             logging.info("D07 get data from ModBus Devices")
-            getTemp = client.read_holding_registers(0, 3, slave = 7)
+            getBusTemp = client.read_holding_registers(0, 3, slave = 7)
+            getWindTemp = client.read_holding_registers(0, 3, slave = 8)
             getPLC = client.read_holding_registers(55, 4, slave = 1)
-            getOil = client.read_holding_registers(54, 1, slave = 1)
             getElect1 = client.read_holding_registers(0, 29, slave = 2)
             getElect2 = client.read_holding_registers(46, 5, slave = 2)
             getElect3 = client.read_holding_registers(800, 6, slave = 2)
@@ -324,7 +323,7 @@ def mainLoop(thread_name, interval):
             logging.info("D08 Handling received data")
             plcResult = [0]*5
             try:
-                newResult = dataHandler(getTemp, getOil, getElect1, getElect2, getElect3, getHarmV, getHarmA, currentResult, CTratio, PTratio)
+                newResult = dataHandler(getBusTemp, getWindTemp, getElect1, getElect2, getElect3, getHarmV, getHarmA, currentResult, CTratio, PTratio)
                 plcResult = plcHandler(getPLC)
                 if plcResult[4] == 500:
                     newResult[0][4:6] = plcResult[0:2]
@@ -371,36 +370,8 @@ def mainLoop(thread_name, interval):
                         except Timeout:
                             logging.warning("Timeout while sending tele message")
                         except Exception as Argument:
-                            logging.exception("Tele Catch")   
-                logging.info("D12 Process2 : Calculate WTI")
-                for i in range(0, 3): loadFactor[i] = (currentResult[(8*(i+1))+i]/trafoData[6])
-                for i in range(0, 3):
-                    currentLoadDefiner[i] = currentResult[i*9]
-                    if currentLoadDefiner[i] - lastLoadDefiner[i] >= loadCoef:
-                        timePassed[i] = 1
-                        deltaHi1[i] = deltaH1[i]
-                        deltaHi2[i] = deltaH2[i]
-                        raisingLoadBool[i] = True
-                        lastLoadDefiner[i] = currentLoadDefiner[i]
-                    elif lastLoadDefiner[i] - currentLoadDefiner[i] >= loadCoef:
-                        timePassed[i] = 1
-                        deltaHi1[i] = deltaH1[i]
-                        deltaHi2[i] = deltaH2[i]
-                        raisingLoadBool[i] = False
-                        lastLoadDefiner[i] = currentLoadDefiner[i]
-                    else:
-                        timePassed[i] = timePassed[i] + 1
-                    try:
-                        if raisingLoadBool[i]:
-                            deltaH1[i] = deltaHi1[i] + (((constantWTI[1]*hotspotFactor*gradient)*(math.pow(loadFactor[i], constantWTI[0])) - deltaHi1[i])*(1 - math.exp(timePassed[i]/((-1 * constantWTI[2] * constantWTI[4])*3))))
-                            deltaH2[i] = deltaHi2[i] + ((((constantWTI[1] - 1)*hotspotFactor*gradient)*(math.pow(loadFactor[i], constantWTI[0])) - deltaHi2[i])*(1 - math.exp(timePassed[i]/(((-1 * constantWTI[3])/constantWTI[2])*3))))
-                        else:
-                            deltaH1[i] = constantWTI[1] * hotspotFactor * gradient * math.pow(loadFactor[i], constantWTI[0]) + (deltaHi1[i] - (constantWTI[1] * hotspotFactor * gradient * math.pow(loadFactor[i], constantWTI[0])))*(math.exp((-1 * timePassed[i])/(constantWTI[2] * constantWTI[4])))
-                            deltaH2[i] = (constantWTI[1] - 1) * hotspotFactor * gradient * math.pow(loadFactor[i], constantWTI[0]) + (deltaHi2[i] - (constantWTI[1] - 1) * hotspotFactor * gradient * math.pow(loadFactor[i], constantWTI[0]))*(math.exp((-1 * timePassed[i])/(constantWTI[3]/constantWTI[4])))
-                    except Exception as Argument:
-                        logging.exception("Error While Calculating")
-                    windTemp[i] = currentResult[0] + (deltaH1[i] - deltaH2[i])
-                    currentResult[i+50] = (round(windTemp[i]*100))/100
+                            logging.exception("Tele Catch") 
+
                 logging.info("D13 Process3 : Update harmonics db and calculate derating")
                 cursor5 = db.cursor()
                 sql5 = """UPDATE voltage_harmonic SET 
