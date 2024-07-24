@@ -132,12 +132,15 @@ def dataHandler(getBusTemp, getWindTemp, getElect1, getElect2, getElect3, getHar
         currentResult[1:4] = [member/10 for member in getBusTemp.registers] #bustemp
         for i in range(1, 4):
             if currentResult[i]>240:
-                currentResult[i] = 5
-
+                currentResult[i] = 0
+    except:
+        pass
+    
+    try:
         currentResult[50:] = [member/10 for member in getWindTemp.registers] #windtemp
         for i in range(50, 53):
             if currentResult[i]>240:
-                currentResult[i] = 5
+                currentResult[i] = 0
     except:
         pass
     try:
@@ -312,7 +315,7 @@ def mainLoop(thread_name, interval):
             else:
                 activeParam[0] = None     
             logging.info("D07 get data from ModBus Devices")
-            getBusTemp = client.read_holding_registers(0, 3, slave = 7)
+            getBusTemp = client.read_holding_registers(4, 3, slave = 7)
             getWindTemp = client.read_holding_registers(0, 3, slave = 8)
             getPLC = client.read_holding_registers(55, 4, slave = 1)
             getElect1 = client.read_holding_registers(0, 29, slave = 2)
