@@ -132,12 +132,15 @@ def dataHandler(getBusTemp, getWindTemp, getElect1, getElect2, getElect3, getHar
         currentResult[1:4] = [member/10 for member in getBusTemp.registers] #bustemp
         for i in range(1, 4):
             if currentResult[i]>240:
-                currentResult[i] = 5
-
+                currentResult[i] = 0
+    except:
+        pass
+    
+    try:
         currentResult[50:] = [member/10 for member in getWindTemp.registers] #windtemp
         for i in range(50, 53):
             if currentResult[i]>240:
-                currentResult[i] = 5
+                currentResult[i] = 0
     except:
         pass
     try:
